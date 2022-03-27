@@ -206,7 +206,7 @@ def init_kconfig():
         srctree=TOP_DIR,
         CMAKE_BINARY_DIR=modules_file_dir(),
         KCONFIG_DOC_MODE="1",
-        KCONFIG_BASE=TOP_DIR,
+        PROJECT_BASE=TOP_DIR,
         SOC_DIR="soc",
         ARCH_DIR="arch",
         BOARD_DIR="boards/*/*",

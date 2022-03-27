@@ -17,11 +17,14 @@ import textwrap
 # Zephyr doesn't use tristate symbols. They're supported here just to make the
 # script a bit more generic.
 from kconfiglib import Kconfig, split_expr, expr_value, expr_str, BOOL, \
-                       TRISTATE, TRI_TO_STR, AND
+                       TRISTATE, TRI_TO_STR, AND, OR
 
 
 def main():
     args = parse_args()
+
+    if args.project_base:
+        os.environ['PROJECT_BASE'] = args.project_base
 
     print("Parsing " + args.kconfig_file)
     kconf = Kconfig(args.kconfig_file, warn_to_stderr=False,
@@ -58,6 +61,9 @@ def main():
         # when using an old configuration and updating Kconfig files.
         check_assigned_sym_values(kconf)
         check_assigned_choice_values(kconf)
+
+    #if kconf.syms['WARN_EXPERIMENTAL'].tri_value == 2:
+    #    check_experimental(kconf)
 
     # Hack: Force all symbols to be evaluated, to catch warnings generated
     # during evaluation. Wait till the end to write the actual output files, so
@@ -118,8 +124,8 @@ def check_assigned_sym_values(kconf):
             user_value = TRI_TO_STR[user_value]
 
         if user_value != sym.str_value:
-            msg = f"{sym.name_and_loc} was assigned the value '{user_value}' " \
-                  f"but got the value '{sym.str_value}'. "
+            msg = f"{sym.name_and_loc} was assigned the value '{user_value}'" \
+                  f" but got the value '{sym.str_value}'. "
 
             # List any unsatisfied 'depends on' dependencies in the warning
             mdeps = missing_deps(sym)
@@ -132,7 +138,8 @@ def check_assigned_sym_values(kconf):
                         # Gives '(FOO || BAR) (=n)' instead of
                         # 'FOO || BAR (=n)', which might be clearer.
                         estr = f"({estr})"
-                    expr_strs.append(f"{estr} (={TRI_TO_STR[expr_value(expr)]})")
+                    expr_strs.append(f"{estr} "
+                                     f"(={TRI_TO_STR[expr_value(expr)]})")
 
                 msg += "Check these unsatisfied dependencies: " + \
                     ", ".join(expr_strs) + ". "
@@ -171,9 +178,9 @@ def check_assigned_choice_values(kconf):
     #
     # We check choice symbols separately to avoid warnings when two different
     # choice symbols within the same choice are set to y. This might happen if
-    # a choice selection from a board defconfig is overridden in a prj.conf, for
-    # example. The last choice symbol set to y becomes the selection (and all
-    # other choice symbols get the value n).
+    # a choice selection from a board defconfig is overridden in a prj.conf,
+    # for example. The last choice symbol set to y becomes the selection (and
+    # all other choice symbols get the value n).
     #
     # Without special-casing choices, we'd detect that the first symbol set to
     # y ended up as n, and print a spurious warning.
@@ -196,6 +203,17 @@ and/or look up {0.name} in the menuconfig/guiconfig interface. The Application
 Development Primer, Setting Configuration Values, and Kconfig - Tips and Best
 Practices sections of the manual might be helpful too.\
 """
+
+
+def check_experimental(kconf):
+    experimental = kconf.syms['EXPERIMENTAL']
+    dep_expr = experimental.rev_dep
+
+    if dep_expr is not kconf.n:
+        selectors = [s for s in split_expr(dep_expr, OR) if expr_value(s) == 2]
+        for selector in selectors:
+            selector_name = split_expr(selector, AND)[0].name
+            warn(f'Experimental symbol {selector_name} is enabled.')
 
 
 def promptless(sym):
@@ -226,6 +244,8 @@ def parse_args():
                              "handwritten fragments and do additional checks "
                              "on them, like no promptless symbols being "
                              "assigned")
+    parser.add_argument("--project-base",
+                        help="Path to current Zephyr installation")
     parser.add_argument("kconfig_file",
                         help="Top-level Kconfig file")
     parser.add_argument("config_out",
